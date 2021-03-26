@@ -31,7 +31,8 @@ my $outfile = $temp_dir.$PATH_SEP."temp.$pgmname.txt";
 open_log($outfile);
 
 # user variables
-my $VERS = "0.0.7 2017-11-23";
+my $VERS = "0.0.8 2021-03-26";
+### $VERS = "0.0.7 2017-11-23";
 ###my $VERS = "0.0.6 2015-09-06";
 ###my $VERS = "0.0.5 2015-01-09";
 my $load_log = 0;
