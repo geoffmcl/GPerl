@@ -6,6 +6,7 @@
 use strict;
 use warnings;
 use File::Basename;  # split path ($name,$dir,$ext) = fileparse($file [, qr/\.[^.]*/] )
+use File::stat;
 use Cwd;
 my $os = $^O;
 my ($pgmname,$perl_dir) = fileparse($0);
@@ -33,6 +34,7 @@ my $load_log = 0;
 my $in_dir = '';
 my $verbosity = 0;
 my $out_file = '';
+my $recursive = 1;
 
 # ### DEBUG ###
 my $debug_on = 0;
@@ -102,35 +104,55 @@ sub process_in_file($) {
 
 my $dir_cnt = 0;
 my $fil_cnt = 0;
+sub get_dir_stats($$);
+
 sub get_dir_stats($$) {
     my ($dir,$lev) = @_;
     my $cnt = 0;
     my $dirs = 0;
     my $fils = 0;
     my $oths = 0;
+    my $byts = 0;
+    my ($sb,$tm,$sz);
     if (! opendir(DIR,$dir)) {
         prtw("WARNING: Unable to open dir '$dir'!\n");
-        return ($cnt,$dirs,$fils,$oths);
+        return ($cnt,$dirs,$fils,$byts);
     }
     my @files = readdir(DIR);
     closedir(DIR);
     my ($itm,$ff);
     ut_fix_directory(\$dir);
     $cnt = scalar @files;
+    my @dirs = ();
     foreach $itm (@files) {
         next if ($itm eq '.');
         next if ($itm eq '..');
         $ff = $dir.$itm;
+        if ($sb = stat($ff)) {
+            $tm = $sb->mtime;
+            $sz = $sb->size;
+        }
         if (-d $ff) {
             $dirs++;
             #prt("$ff\n");
+            push(@dirs,$ff);
         } elsif (-f $ff) {
             $fils++;
+            $byts += $sz;
         } else {
             $oths++;
         }
     }
-    return ($cnt,$dirs,$fils,$oths);
+    if ($recursive) {
+        foreach $ff (@dirs) {
+            my ($c,$d,$f,$b) = get_dir_stats($ff,($lev+1));
+            $cnt  += $c;
+            $dirs += $d;
+            $fils += $f;
+            $byts += $b;
+        }
+    }
+    return ($cnt,$dirs,$fils,$byts);
 }
 
 sub process_in_dir($$) {
@@ -142,23 +164,77 @@ sub process_in_dir($$) {
     my @files = readdir(DIR);
     closedir(DIR);
     my ($itm,$ff);
-    my ($cnt,$dirs,$fils,$oths);
+    my ($cnt,$dirs,$fils,$oths,$byts,$len,$sb,$tm,$sz,$ra);
+    my @dirs = ();
     ut_fix_directory(\$dir);
+    my $bytes = 0;
+    my $max_dir = 3;
+    my $tot_dirs = 0;
+    my $tot_fils = 0;
+    my $tot_byts = 0;
+    $oths = 0;
     foreach $itm (@files) {
         next if ($itm eq '.');
         next if ($itm eq '..');
         $ff = $dir.$itm;
+        if ($sb = stat($ff)) {
+            $tm = $sb->mtime;
+            $sz = $sb->size;
+        }
+        $len = length($itm);
         if (-d $ff) {
             $dir_cnt++;
-            ($cnt,$dirs,$fils,$oths) = get_dir_stats($ff,0);
-            prt("$ff - ($dirs,$fils,$oths)\n");
+            ($cnt,$dirs,$fils,$byts) = get_dir_stats($ff,0);
+            prt("$ff - ($dirs,$fils,$byts)\n") if (VERB9());
+            push(@dirs, [ $itm, $ff, $dirs, $fils, $oths, $byts ]);
+            $max_dir = $len if ($len > $max_dir);
         } elsif (-f $ff) {
             $fil_cnt++;
+            $bytes += $sz;
         } else {
             prtw("WARNING: Not dir or file '$ff'\n");
         }
     }
-    prt("In '$dir', found $dir_cnt dirs, $fil_cnt file...\n");
+    $tot_dirs += $dir_cnt;
+    $tot_fils += $fil_cnt;
+    $tot_byts += $bytes;
+
+    my ($cfils,$cdirs,$coths,$cbyts,$ckb);
+    foreach $ra (@dirs) {
+        #push(@dirs, [ $itm, $ff, $dirs, $fils, $oths, $bytes ]);
+        $itm  = ${$ra}[0];
+        $ff   = ${$ra}[1];
+        $dirs = ${$ra}[2];
+        $fils = ${$ra}[3];
+        $oths = ${$ra}[4];
+        $byts = ${$ra}[5];
+        # for display
+        $tot_dirs += $dirs;
+        $tot_fils += $fils;
+        $tot_byts += $byts;
+
+        $itm .= ' ' while (length($itm) < $max_dir);
+        $cdirs = sprintf("%5d", $dirs); # up to  100000
+        $cfils = sprintf("%6d", $fils); # up to 1000000
+        # $coths = sprintf("%2d", $oths);
+        # $cbyts = sprintf("%9d", $byts);
+        $cbyts = get_nn($byts);
+        $cbyts = ' '.$cbyts while (length($cbyts) < 15); # up to 1,000,000,000,000 (10T)
+        $ckb = util_bytes2ks($byts);
+        $ckb = ' '.$ckb while (length($ckb) < 8);
+        prt("$itm: $cdirs,$cfils,$cbyts ($ckb)\n");
+    }
+    $itm = "Sum";
+    $itm .= ' ' while (length($itm) < $max_dir);
+    $cdirs = sprintf("%5d", $tot_dirs); # up to  100000
+    $cfils = sprintf("%6d", $tot_fils); # up to 1000000
+    $cbyts = get_nn($tot_byts);
+    $cbyts = ' '.$cbyts while (length($cbyts) < 15); # up to 1,000,000,000,000 (1OOTB)
+    $ckb = util_bytes2ks($tot_byts);
+    $ckb = ' '.$ckb while (length($ckb) < 8);
+
+    prt("$itm: $cdirs,$cfils,$cbyts ($ckb)\n");
+    # prt("$itm: found $tot_dirs dirs, $tot_fils files, $cbyts ($ckb)\n");
 }
 
 #########################################
@@ -175,7 +251,7 @@ sub need_arg {
 
 sub parse_args {
     my (@av) = @_;
-    my ($arg,$sarg);
+    my ($arg,$sarg,$oo);
     my $verb = VERB2();
     while (@av) {
         $arg = $av[0];
@@ -209,6 +285,11 @@ sub parse_args {
                 $sarg = $av[0];
                 $out_file = $sarg;
                 prt("Set out file to [$out_file].\n") if ($verb);
+            } elsif ($sarg =~ /^r/) {
+                $oo = 1;
+                $oo = 0 if ($sarg =~ /-$/);
+                $recursive = $oo;
+                prt("Set recursive to [$recursive].\n") if ($verb);
             } else {
                 pgm_exit(1,"ERROR: Invalid argument [$arg]! Try -?\n");
             }
@@ -242,6 +323,7 @@ sub give_help {
     prt(" --verb[n]     (-v) = Bump [or set] verbosity. def=$verbosity\n");
     prt(" --load        (-l) = Load LOG at end. ($outfile)\n");
     prt(" --out <file>  (-o) = Write output to this file.\n");
+    prt(" --recur       (-r) = Resursive into sub-dirs. (def=$recursive)\n");
 }
 
 # eof - listdirs.pl
