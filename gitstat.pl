@@ -150,7 +150,11 @@ sub gitstat() {
         }
         prt("$lnn: $line\n");
     }
-    prt("Mod: $mcnt, Add: $acnt\n");
+    if (($mcnt == 0) && ($acnt == 0)) {
+        prt("Appears nothing to commit, or add - clean\n");
+    } else {
+        prt("Mod: $mcnt, Add: $acnt\n");
+    }
 }
 
 
