@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 # NAME: get-url.pl
-# AIM: Test '
+# AIM: Test 'LSW::UserAgent' on htacg tidy-html5 repo
+# 2021/04/15 - Initial cut
 use strict;
 use warnings;
 use File::Basename;  # split path ($name,$dir,$ext) = fileparse($file [, qr/\.[^.]*/] )
@@ -30,7 +31,8 @@ my $VERS = "0.1.0 2021-04-05";
 my $load_log = 0;
 my $in_file = '';
 my $verbosity = 0;
-my $out_file = '';
+# my $out_file = '';
+my $out_file = $temp_dir.$PATH_SEP."tempgh.json";
 
 # ### DEBUG ###
 my $debug_on = 0;
@@ -111,7 +113,10 @@ sub get_url() {
     my $browser = LWP::UserAgent->new;
     my $response = $browser->get($url, @ns_headers);
     if ($response->is_success) {
-        prt("$response->content");
+	$sl = $response->content;
+	$sl .= "\n";
+	write2file($sl,$out_file);
+        prt("response content written to '$out_file' ... \n");
     } else {
         $sl = $response->status_line;
         prt("Fetch '$url' FAILED! $sl \n");
