@@ -113,13 +113,14 @@ sub get_url() {
     my $browser = LWP::UserAgent->new;
     my $response = $browser->get($url, @ns_headers);
     if ($response->is_success) {
-	$sl = $response->content;
-	$sl .= "\n";
-	write2file($sl,$out_file);
-        prt("response content written to '$out_file' ... \n");
+	    $sl = $response->content;
+	    $sl .= "\n";
+        rename_2_old_bak($out_file);
+	    write2file($sl,$out_file);
+        prt("Response content written to '$out_file' ... \n");
     } else {
         $sl = $response->status_line;
-        prt("Fetch '$url' FAILED! $sl \n");
+        prt("Fetch of '$url' FAILED!\n $sl \n");
     }
 }
 
