@@ -1,6 +1,10 @@
 #!/usr/bin/perl -w
 # NAME: get-url.pl
 # AIM: Test 'LSW::UserAgent' on htacg tidy-html5 repo
+# Per: https://www.perlmonks.org/?node_id=1125466, had to install 
+# 'cpan install  LWP::Protocol::http'...
+# And to run this, needed 'C:\Strawberry>ren cperl c'... but maybe fixed by
+# copying all the cperl\bin\*.dll to c\bin...
 # 2021/04/15 - Initial cut
 use strict;
 use warnings;
@@ -109,14 +113,29 @@ sub process_in_file($) {
 }
 
 sub get_url() {
-    my ($sl);
+    my ($sl,$tmp,$len,$i,$c);
     my $browser = LWP::UserAgent->new;
     my $response = $browser->get($url, @ns_headers);
     if ($response->is_success) {
-	    $sl = $response->content;
-	    $sl .= "\n";
+        $tmp = $response->content;
+        $len = length($tmp);
+        my $inic = 0;
+        $sl = '';
+        for ($i = 0; $i < $len; $i++) {
+            $c = substr($tmp,$i,1);
+            if ($inic) {
+                $inic = 0 if ($c eq '"');
+            } else {
+                $inic = 1 if ($c eq '"');
+            }
+            $sl .= $c;
+            if (! $inic) {
+                $sl .= "\n" if ($c eq ',');
+            }
+        }
+        $sl .= "\n";
         rename_2_old_bak($out_file);
-	    write2file($sl,$out_file);
+        write2file($sl,$out_file);
         prt("Response content written to '$out_file' ... \n");
     } else {
         $sl = $response->status_line;
