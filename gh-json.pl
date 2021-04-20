@@ -289,12 +289,12 @@ sub output_hashes() {
     my ($title,$state,$user,$date,$body);
     my ($ra,$rh);
     my %hash = ();
-    my @arr = sort mycmp_ascend_n keys(%comments);
-    $hash{$_}++ for (@arr);
-    $cnt = scalar @arr;
-    prt("Got $cnt comment keys ".join(" ",@arr)."\n");
+    my @carr = sort mycmp_ascend_n keys(%comments);
+    $hash{$_}++ for (@carr);
+    $cnt = scalar @carr;
+    prt("Got $cnt comment keys ".join(" ",@carr)."\n");
 
-    @arr = sort mycmp_ascend_n keys(%issues);
+    my @arr = sort mycmp_ascend_n keys(%issues);
     $cnt = scalar @arr;
     if ($cnt == 0) {
         prt("Warning: No issue 'keys' found! no output...\n");
@@ -302,6 +302,7 @@ sub output_hashes() {
     }
     prt("Got $cnt issue keys ".join(" ",@arr)."\n");
     my @out = ();
+    my %done_com = ();
     foreach $is (@arr) {
         prt("Processing issue '$is'...\n");
         $rh2 = $issues{$is};
@@ -316,6 +317,7 @@ sub output_hashes() {
         push(@out,"$body");
         push(@out,$csep);
         if (defined $comments{$is}) {
+            $done_com{$is} = 1;
             $ra = $comments{$is};
             $cnt = scalar @{$ra};
             prt("Processing $cnt comments for $is...\n");
@@ -339,6 +341,19 @@ sub output_hashes() {
     rename_2_old_bak($out_file);
     write2file($line,$out_file);
     prt("Results written to '$out_file'\n");
+    $cnt = 0;
+    @arr = ();
+    foreach $is (@carr) {
+        if (! defined $done_com{$is}) {
+            $cnt++;
+            push(@arr,$is);
+        }
+    }
+    if ($cnt) {
+        prt("Note: $cnt issues in comments, not in 'issues': ".join(" ",@arr)."\n");
+    } else {
+        prt("Good: All comment issues assigned to an issue issue\n");
+    }
 }
 
 sub process_in_files() {
