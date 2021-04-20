@@ -317,7 +317,6 @@ sub output_hashes() {
         push(@out,"$body");
         push(@out,$csep);
         if (defined $comments{$is}) {
-            $done_com{$is} = 1;
             $ra = $comments{$is};
             $cnt = scalar @{$ra};
             prt("Processing $cnt comments for $is...\n");
@@ -332,6 +331,7 @@ sub output_hashes() {
                 push(@out,"$body");
                 push(@out,$csep);
             }
+            $done_com{$is} = 1;
         } else {
             prt("No comments for issue $is\n");
         }
@@ -342,17 +342,20 @@ sub output_hashes() {
     write2file($line,$out_file);
     prt("Results written to '$out_file'\n");
     $cnt = 0;
-    @arr = ();
+    my @marr = ();
+    my $ok = 0;
     foreach $is (@carr) {
-        if (! defined $done_com{$is}) {
+        if (defined $done_com{$is}) {
+            $ok++;
+        } else {
             $cnt++;
-            push(@arr,$is);
+            push(@marr,$is);
         }
     }
     if ($cnt) {
-        prt("Note: $cnt issues in comments, not in 'issues': ".join(" ",@arr)."\n");
+        prt("Note: $cnt issues in comments, not in 'issues': ".join(" ",@marr)."\n");
     } else {
-        prt("Good: All comment issues assigned to an issue issue\n");
+        prt("Good: All $ok comment issues assigned to an issue issue\n");
     }
 }
 
