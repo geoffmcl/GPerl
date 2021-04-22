@@ -10,6 +10,7 @@ use strict;
 use warnings;
 use File::Basename;  # split path ($name,$dir,$ext) = fileparse($file [, qr/\.[^.]*/] )
 use LWP;
+use Data::Dumper;
 use Cwd;
 my $os = $^O;
 my ($pgmname,$perl_dir) = fileparse($0);
@@ -37,6 +38,7 @@ my $in_file = '';
 my $verbosity = 0;
 # my $out_file = '';
 my $out_file = $temp_dir.$PATH_SEP."tempgh.json";
+my $out_file2 = $temp_dir.$PATH_SEP."tempheaders.txt";
 
 # ### DEBUG ###
 my $debug_on = 0;
@@ -114,9 +116,18 @@ sub process_in_file($) {
 
 sub get_url() {
     my ($sl,$tmp,$len,$i,$c);
+    prt("Creating new LWP::UserAgent...\n");
     my $browser = LWP::UserAgent->new;
+    prt("Doing 'get' url '$url'\n");
     my $response = $browser->get($url, @ns_headers);
+    prt(Dumper($response));
     if ($response->is_success) {
+        # $tmp = $response->headers;
+        $tmp = $response->headers_as_string;
+        rename_2_old_bak($out_file2);
+        write2file($tmp,$out_file2);
+        prt("Response headers written to '$out_file2' ... \n");
+
         $tmp = $response->content;
         $len = length($tmp);
         my $inic = 0;
