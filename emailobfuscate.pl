@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 # NAME: emailobfuscate.pl
 # AIM: Give an input file, convert all email from <abc@def.com> to <abc _at_ def _dot_ com>
+# 2021/04/22 - Add Change Log Summary table
 # 2021/03/26 - Move to GPerl, bump version...
 # 2017-11-23 - Idea to reduce 'version.txt' commits to ONE LINE - if -V verhist.log added...
 # 23/11/2015 - Target to 'authors' needs to be in two places
@@ -32,7 +33,8 @@ my $outfile = $temp_dir.$PATH_SEP."temp.$pgmname.txt";
 open_log($outfile);
 
 # user variables
-my $VERS = "0.0.8 2021-03-26";
+my $VERS = "0.0.9 2021-04-22";
+#my $VERS = "0.0.8 2021-03-26";
 #my $VERS = "0.0.7 2017-11-23";
 #my $VERS = "0.0.6 2015-09-07";
 #my $VERS = "0.0.5 2015-05-21";
@@ -47,7 +49,10 @@ my $vers_file = '';
 
 # ### DEBUG ###
 my $debug_on = 0;
-my $def_file = 'F:\Projects\temp2.log';
+# my $def_file = 'F:\Projects\temp2.log';
+my $def_vers = '5.7.46';
+my $def_file = 'D:\UTILS\tidy\temp3-5.7.46.log';
+my $def_out = "temp-$def_vers.html";
 
 ### program variables
 my @warnings = ();
@@ -110,7 +115,7 @@ table, td, th { border: 1px solid gray; }
 <body>
 <a id="top"></a>
 <h1>Release $vers</h1>
-<p>Change log for this release. List of <a href="#authors">authors</a></p>
+<p>Change log for this release. List of <a href="#authors">authors</a>. <a href="#chglog">summary</a></p>
 <pre>
 EOF
     return $txt;
@@ -127,14 +132,6 @@ EOF
     return $txt;
 }
 
-
-sub html_tail() {
-    my $txt = <<EOF;
-</pre>
-EOF
-    $txt .= html_end();
-    return $txt;
-}
 
 sub get_obs_line($) {
     my $line = shift;
@@ -301,6 +298,8 @@ sub process_in_file($) {
     $lnn = 0;
     my @nlines = ();
     my @tlines = ();
+    my @rlines = (); # collect change info
+    my @chglines = ();  # list of collected changes
     my %authors = ();
     my $bdate = '';
     my $edate = '';
@@ -311,6 +310,8 @@ sub process_in_file($) {
     my $comm = '';
     my $got_vers = 0;
     my $got_merge = 0;
+    my $got_bump = 0;
+    my $got_date = 0;
     foreach $line (@lines) {
         chomp $line;
         $lnn++;
@@ -327,6 +328,12 @@ sub process_in_file($) {
             }
             $author = trim_all($author);
             $author = 'Geoff R. McLane' if ($author eq 'Geoff McLane');
+            if ($author =~ /Buo-ren/) {
+                $author = "Buo-ren, Lin";
+            } elsif ($author =~ /Jacobson/) {
+                $author = "Dan Jacobson";
+            }
+
             if (! defined $authors{$author}) {
                 $authors{$author} = [0,0,0];
             }
@@ -347,6 +354,9 @@ sub process_in_file($) {
                     $bdate = $date;
                 }
                 $gotdate++;
+                $got_date = 1;
+            } else {
+                prtw("Warning: Date failed on '$line'\n");
             }
         } elsif ($line =~ /^commit\s+/) {
             if (@tlines) {
@@ -367,6 +377,11 @@ sub process_in_file($) {
                     push(@nlines,@tlines);
                 }
                 @tlines = ();
+                if (@rlines) {
+                    # build commit comment summary
+                    $tmp = join(" ",@rlines);
+                    push(@chglines,[ $epoch, $comm, $tmp ]);
+                }
             }
             # clear previous
             $got_vers = 0;
@@ -382,11 +397,19 @@ sub process_in_file($) {
             if (defined $vers_commits{$comm}) {
                 $got_vers = 1;
             }
+            $got_bump = 0;
+            $got_date = 0;
+            @rlines = ();
         } elsif ($line =~ /^Merge:\s+/) {
             # Merge: 9e09f1a e4fc470
             $got_merge = 1;
         } elsif ($line =~ /^\s+/) {
             # comment text
+            if (($line =~ /\s+Bump\s+/i) && ($line =~ /\s+\d+\.\d+\.\d+\s+/)) {
+                $got_bump = 1;
+                #pgm_exit(1,"Got line '$line'\n");
+            }
+            push(@rlines,$tline);
         } else {
             pgm_exit(1,"$lnn: $line NOT PARSED\n");
         }
@@ -423,12 +446,12 @@ sub process_in_file($) {
     $line = '';
     $line .= html_head($html_version) if ($add_html);
     $line .= join("\n",@nlines);
+    $line .= "</pre>\n";    # close the pre
     @arr = keys %authors;
     $lnn = scalar @arr;
     $off = int(($eep-$bep) / 86400);
     if ($add_html) {
         ###########################################################################
-        $line .= "</pre>\n";    # close the pre
         if ($add_suthors && $lnn) {
             $line .= "<a name=\"authors\"></a>\n";
             $line .= "\n<p>This log has  $commits commits by $lnn Authors. \n";
@@ -475,6 +498,27 @@ sub process_in_file($) {
                 }
             }
             $line .= "</table>\n";
+            if (@chglines) {
+                $line .= "<a id=\"chglog\"></a>\n";
+                $line .= "<h2>Change Log Summary</h2>\n";
+                $line .= "<table>\n";
+                $line .= "<tr>\n";
+                $line .= "<th>Date</th><th>Commit</th><th>Comments</th>\n";
+                $line .= "</tr>\n";
+                foreach $raa (@chglines) {
+                    $epoch = ${$raa}[0];
+                    $date = lu_get_YYYYMMDD_UTC($epoch);
+                    $comm = ${$raa}[1];
+                    $tmp  = ${$raa}[2];
+                    $inc = html_line($tmp,0);
+                    $line .= "<tr>\n";
+                    $line .= "<td>$date</td>\n";
+                    $line .= "<td><a target=\"_blank\" href=\"https://github.com/htacg/tidy-html5/commit/$comm\">$comm</a></td>\n";
+                    $line .= "<td>$inc</td>\n";
+                    $line .= "</tr>\n";
+                }
+                $line .= "</table>\n";
+            }
         }
         if (($gotdate > 2)&&($eep > $bep)) {
             $line .= "\n<p>Date: from $bdate to $edate ($off days)</p>\n";
@@ -482,7 +526,7 @@ sub process_in_file($) {
         if (length($out_file)) {
             $line .= "<p class='rite'>";
             my ($n,$d) = fileparse($out_file);
-            $line .= "$n, by $pgmname, on $curr_date, from 'git log'";
+            $line .= "$n, by <a href=\"https://github.com/geoffmcl/GPerl/blob/next/emailobfuscate.pl\">emailobfuscate.pl</a>, on $curr_date, from 'git log'";
             $line .= "</p>\n";
         }
         $line .= html_end();
@@ -607,7 +651,7 @@ sub parse_args {
                 prt("Set to load log at end. ($load_log)\n") if ($verb);
             } elsif ($sarg =~ /^i/) {
                 $add_suthors = 1;
-                prt("Set to add Authors table end html end.\n") if ($verb);
+                prt("Set to add Authors, Summary tables to html end.\n") if ($verb);
             } elsif ($sarg =~ /^a/) {
                 need_arg(@av);
                 shift @av;
@@ -620,7 +664,7 @@ sub parse_args {
                 shift @av;
                 $sarg = $av[0];
                 $out_file = $sarg;
-                prt("Set out file to [$out_file].\n") if ($verb);
+                prt("Set out HTML file to [$out_file].\n") if ($verb);
             } elsif ($sarg =~ /^V/) {
                 need_arg(@av);
                 shift @av;
@@ -643,6 +687,10 @@ sub parse_args {
         if (length($in_file) ==  0) {
             $in_file = $def_file;
             prt("Set DEFAULT input to [$in_file]\n");
+            $out_file = $def_out;
+            $html_version = $def_vers;
+            $add_html = 1;
+            $add_suthors = 1;
         }
     }
     if (length($in_file) ==  0) {
@@ -663,16 +711,14 @@ sub give_help {
     prt(" --verb[n]     (-v) = Bump [or set] verbosity. def=$verbosity\n");
     prt(" --load        (-l) = Load LOG at end. ($outfile)\n");
     prt(" --add vers    (-a) = Add HTML head and tail using this version number.\n");
-    prt(" --out <file>  (-o) = Write output to this file.\n");
-    prt(" --inc         (-i) = Include an authors summary to end.\n");
+    prt(" --out <file>  (-o) = Write HTML output to this file.\n");
+    prt(" --inc         (-i) = Include authors and summary tables at end.\n");
     prt(" --Vers <file> (-V) = Load verhist.log file, and its commits added as 1 line.\n");
     prt("\n");
     prt(" Given an input of a git log created with a command like -\n");
     prt(" \$ git log \"--decorate=full\" 4a4f209..HEAD > temp.log\n");
     prt(" and using a command like '\$ emailobs tidy-html5\\temp.log -o 5.1.8.html -a 5.1.8 -i\n");
     prt(" generate a suitable html file to publish with the tidy binaries.\n");
-
-
 }
 
 # eof - emailobfuscate.pl
