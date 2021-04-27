@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 # NAME: chkdirind.pl
 # AIM: Given an input .dirindex path, walk the subdirectories indicated
+# 2021/04/25 - Add back SHA1 compare, and HiRes timing...
 # 2021/02/14 - Move to D:\GPerl dir
 # 2021/01/29 - initial cut
 use strict;
@@ -9,6 +10,7 @@ use File::Basename;  # split path ($name,$dir,$ext) = fileparse($file [, qr/\.[^
 use Digest::SHA qw(sha1_hex); # my $var = 123; my $sha1_hash = sha1_hex($var);
 use File::stat; # get file info if ($sb = stat($fil)){$dt = $sb->mtime; $sz = $sb->size;}
 use File::Spec; # File::Spec->rel2abs($rel);
+use Time::HiRes qw(gettimeofday tv_interval);       # provide more accurate timings
 use Cwd;
 my $os = $^O;
 my ($pgmname,$perl_dir) = fileparse($0);
@@ -30,7 +32,8 @@ my $outfile = $temp_dir.$PATH_SEP."temp.$pgmname.txt";
 open_log($outfile);
 
 # user variables
-my $VERS = "0.0.10 2021-01-29";
+my $VERS = "0.0.11 2021-04-25"; # add back SHA1 compare
+#my $VERS = "0.0.10 2021-01-29";
 my $load_log = 0;
 my $in_file = '';
 my $verbosity = 0;
@@ -55,9 +58,9 @@ my %dir_ind = (
 
 # ### DEBUG ###
 my $debug_on = 0;
-# my $def_file = 'H:\FG\S-KATL\.dirindex';
+my $def_file = 'H:\FG\S-KATL\.dirindex';
 # my $def_file = 'H:\FG\osm2city\.dirindex';
-my $def_file = 'D:\FG\S\.dirindex';
+# my $def_file = 'D:\FG\S\.dirindex';
 # my $def_file = 'D:\DTEMP\FG\St\.dirindex';
 # my $def_file = 'D:\DTEMP\FG\S-CYYR\.dirindex';
 # my $def_file = 'D:\DTEMP\FG\S-KATL\.dirindex';
@@ -71,7 +74,7 @@ my @newdirs = ();
 my @upddirind = ();
 my @updloads = ();
 my @downloads = ();
-
+my $bgntm = [gettimeofday];
 my $tot_reload = 0; # count of RE-DOWNLOADS
 my $tot_updates = 0; # bytes to RELOAD
 
@@ -127,6 +130,12 @@ sub prtw($) {
    push(@warnings,$tx);
 }
 
+sub set_min_max($) {
+    my $dt = shift;
+    $min_dt = $dt if ($dt < $min_dt);
+    $max_dt = $dt if ($dt > $max_dt);
+}
+
 sub load_local_dirind($$) { # $dirind);
     my ($inf,$rh) = @_;
     my $txt = '';   # start with nothing
@@ -154,8 +163,7 @@ sub process_nxt_dir($$$) {
     }
     $dt = $sb->mtime;
     $sz = $sb->size;
-    $min_dt = $dt if ($dt < $min_dt);
-    $max_dt = $dt if ($dt > $max_dt);
+    set_min_max($dt);
     my $rhash = '';
     my $txt = load_local_dirind($inf,\$rhash);
     my $len = length($txt);
@@ -226,6 +234,7 @@ sub process_nxt_dir($$$) {
                             if ($sb = stat($nxt)) {
                                 $dt = $sb->mtime;
                                 $sz = $sb->size;
+                                set_min_max($dt);
                                 if ($sz == $size) {
                                     # no update needed...
                                 } else {
@@ -234,19 +243,21 @@ sub process_nxt_dir($$$) {
                                     $tot_updates += $size;
                                     $tot_reload++;
                                 }
+                            } else {
+                                pgm_exit(1,"Error: 'stat' of file '$nxt' FAILED!\n");
                             }
-#                        } else {
-#                            # this is GB of data - heavy slow load
-#                            my $lhash = '';
-#                            my $txt2 = load_local_dirind($nxt,\$lhash);
-#                            # need to compare HASH
-#                            if ($hash eq $lhash) {
-#                                # file looks good to stay
-#                            } else {
-#                                push(@updloads, [$nxtdir,$nxt,$size]);
-#                                $tot_updates += $size;
-#                                $tot_reload++;
-#                            }
+                        } else {
+                            # this is GB of data - heavy slow load
+                            my $lhash = '';
+                            my $txt2 = load_local_dirind($nxt,\$lhash);
+                            # need to compare HASH
+                            if ($hash eq $lhash) {
+                                # file looks good to stay
+                            } else {
+                                push(@updloads, $nxt);
+                                $tot_updates += $size;
+                                $tot_reload++;
+                            }
                         }
                     } else {
                         # download ..e like w047s24.txz
@@ -364,8 +375,10 @@ sub process_downloads() {
     # MISSING DIRS, FILES or UPDATE FILES - need to DOWNLOAD
     my ($out,$bat,$fil,$ccnt);
     my ($name,$dir) = fileparse($in_file);
-
-    prt("\nProcessed $in_file, and found\n");
+    my $use = ($use_size_cmp) ? 'SIZE' : 'SHA1';
+    my $elap = tv_interval ( $bgntm, [gettimeofday]);
+    $elap = (int(($elap + 0.05) * 10) / 10);
+    prt("\nProcessed $in_file, using $use cmp, in $elap secs, and found\n");
     prt(" count $tot_reload # RE-DOWNLOADS, $tot_updates # bytes to RELOAD\n");
     prt(" count $tot_files # files examined, $tot_down # bytes to DOWNLOAD\n");
     prt(" count $tot_found # found, $tot_done # bytes...\n");
@@ -502,6 +515,11 @@ sub parse_args {
                 $sarg = $av[0];
                 $out_file = $sarg;
                 prt("Set out file to [$out_file].\n") if ($verb);
+            } elsif ($sarg =~ /^s/) {
+                $oo = 1;
+                $oo = 0 if ($sarg =~ /-$/);
+                $use_size_cmp = $oo;
+                prt("Set use size compare to [$use_size_cmp].\n") if ($verb);
             } else {
                 pgm_exit(1,"ERROR: Invalid argument [$arg]! Try -?\n");
             }
@@ -523,6 +541,7 @@ sub parse_args {
         if (length($in_file) ==  0) {
             $in_file = $def_file;
             prt("Set DEFAULT input to [$in_file]\n");
+            $use_size_cmp = 0;
         }
     }
     if (length($in_file) ==  0) {
@@ -542,6 +561,7 @@ sub give_help {
     prt(" --load        (-l) = Load LOG at end. ($outfile)\n");
     prt(" --out <file>  (-o) = Write output to this file.\n");
     prt(" --verb[n]     (-v) = Bump [or set] verbosity. def=$verbosity\n");
+    prt(" --size[-]     (-s) = Use size compare, instead of SHA1. (def=$use_size_cmp)\n");
     prt("\n");
     prt(" Given a valid terrasync directory, walk the '.dirindex chain.\n");
 }
